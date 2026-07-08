@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Home Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --accent-color: #888888;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 30px;
+            box-sizing: border-box;
+        }
+        
+        /* Unauffälliger Editor-Button oben links */
+        .admin-btn {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: #eee;
+            border: 1px solid #ccc;
+            padding: 4px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            opacity: 0.1;
+            border-radius: 4px;
+            z-index: 1000;
+        }
+        .admin-btn:hover { opacity: 1; }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        /* Top-Bereich (Uhrzeit links, Wettervorhersage rechts) */
+        .top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+        }
+        .time-box { line-height: 1; min-width: 250px; }
+        .time { font-size: 64px; font-weight: 300; }
+        .date { font-size: 18px; color: var(--accent-color); margin-top: 8px; }
+
+        /* Integriertes Wetter-Widget-Feld */
+        .weather-box {
+            flex-grow: 1;
+            max-width: 500px;
+            min-height: 98px;
+        }
+
+        /* Foto-Bereich */
+        .photo-widget {
+            width: 100%;
+            height: 320px;
+            border-radius: 12px;
+            overflow: hidden;
+            background-color: #f5f5f5;
+        }
+        .photo-widget img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        /* Split-Layout unten (Kalender & Aufgaben) */
+        .bottom-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            min-height: 400px;
+        }
+        .widget { width: 100%; height: 100%; }
+        .widget iframe { width: 100%; height: 100%; border: none; }
+
+        /* Editor Panel */
+        .editor-panel {
+            display: none;
+            background: #f9f9f9;
+            border: 2px dashed #ff9900;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        body.edit-mode .editor-panel { display: block; }
+        .input-group { margin-bottom: 12px; }
+        .input-group label { display: block; font-size: 12px; font-weight: bold; margin-bottom: 4px; }
+        .input-group input, .input-group textarea { width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; }
+        .save-btn { background: #ff9900; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <button class="admin-btn" onclick="toggleEditor()">Layout bearbeiten</button>
+
+    <div class="container">
+        
+        <!-- Editor Konfiguration -->
+        <div class="editor-panel" id="editorPanel">
+            <h3>Dashboard Einstellungen</h3>
+            
+            <div class="input-group">
+                <label>1. Wetter Widget-Code von weatherwidget.io (Hier den Code reinbopieren)</label>
+                <textarea id="input-weather-code" rows="4" placeholder="<a class='weatherwidget-io' ...></a>"></textarea>
+            </div>
+            
+            <div class="input-group">
+                <label>2. Bild-Dateiname (z.B. foto.jpg oder ein Online-Link)</label>
+                <input type="text" id="input-image" placeholder="bildname.jpg">
+            </div>
+            
+            <div class="input-group">
+                <label>3. Kalender (Indify- oder DAKboard-Link)</label>
+                <input type="text" id="url-calendar" placeholder="https://...">
+            </div>
+            
+            <div class="input-group">
+                <label>4. Aufgaben / Todoist (Indify- oder Todoist-Widget-Link)</label>
+                <input type="text" id="url-tasks" placeholder="https://...">
+            </div>
+            
+            <button class="save-btn" onclick="saveData()">Speichern & Aktualisieren</button>
+        </div>
+
+        <!-- Top Bereich (Zeit & Wetter) -->
+        <div class="top-row">
+            <div class="time-box">
+                <div class="time" id="clock">00:00</div>
+                <div class="date" id="date">Lade Datum...</div>
+            </div>
+            <div class="weather-box" id="weather-container">
+                <!-- Das schöne Wetter-Widget wird hier geladen -->
+            </div>
+        </div>
+
+        <!-- Foto-Widget -->
+        <div class="photo-widget">
+            <img id="dashboard-img" src="about:blank" alt="Dashboard Bild">
+        </div>
+
+        <!-- Unterer Bereich -->
+        <div class="bottom-row">
+            <div class="widget">
+                <iframe id="frame-calendar" src="about:blank"></iframe>
+            </div>
+            <div class="widget">
+                <iframe id="frame-tasks" src="about:blank"></iframe>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Uhrzeit und Datum
+        function updateClock() {
+            const now = new Date();
+            const options = { weekday: 'long', day: 'numeric', month: 'long' };
+            
+            let hours = String(now.getHours()).padStart(2, '0');
+            let minutes = String(now.getMinutes()).padStart(2, '0');
+            
+            document.getElementById('clock').innerText = `${hours}:${minutes}`;
+            document.getElementById('date').innerText = now.toLocaleDateString('de-DE', options);
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function toggleEditor() {
+            document.body.classList.toggle('edit-mode');
+        }
+
+        // Standard-Daten (Ein schönes, voreingestelltes Wetter-Widget als Platzhalter)
+        const defaultWeather = `<a class="weatherwidget-io" href="https://forecast7.com/de/52d2710d52/braunschweig/" data-label_1="BRAUNSCHWEIG" data-label_2="WETTER" data-theme="pure" data-basecolor="#ffffff" data-accent="" data-textcolor="#333333" >BRAUNSCHWEIG WETTER</a>`;
+
+        const defaultData = {
+            weatherCode: defaultWeather,
+            image: "",
+            calendar: "about:blank",
+            tasks: "about:blank"
+        };
+
+        let config = JSON.parse(localStorage.getItem('dashboard_config')) || defaultData;
+
+        function loadDashboard() {
+            // Wetter-Widget injizieren und Skript neu laden
+            const weatherContainer = document.getElementById('weather-container');
+            weatherContainer.innerHTML = config.weatherCode;
+            
+            // Wichtig, damit das Widget aktiv wird: das Wetter-Skript neu triggern
+            const oldScript = document.getElementById('weather-script');
+            if (oldScript) oldScript.remove();
+            
+            const script = document.createElement('script');
+            script.id = 'weather-script';
+            script.src = "https://weatherwidget.io/js/widget.min.js";
+            document.body.appendChild(script);
+
+            // Bild laden
+            const imgElement = document.getElementById('dashboard-img');
+            if (config.image) {
+                imgElement.src = config.image;
+            } else {
+                imgElement.src = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80";
+            }
+
+            // Externe iFrames laden
+            document.getElementById('frame-calendar').src = config.calendar;
+            document.getElementById('frame-tasks').src = config.tasks;
+
+            // Inputs im Editor vorausfüllen
+            document.getElementById('input-weather-code').value = config.weatherCode;
+            document.getElementById('input-image').value = config.image;
+            document.getElementById('url-calendar').value = config.calendar !== "about:blank" ? config.calendar : "";
+            document.getElementById('url-tasks').value = config.tasks !== "about:blank" ? config.tasks : "";
+        }
+
+        function saveData() {
+            config.weatherCode = document.getElementById('input-weather-code').value || defaultWeather;
+            config.image = document.getElementById('input-image').value;
+            config.calendar = document.getElementById('url-calendar').value || "about:blank";
+            config.tasks = document.getElementById('url-tasks').value || "about:blank";
+
+            localStorage.setItem('dashboard_config', JSON.stringify(config));
+            loadDashboard();
+            toggleEditor();
+        }
+
+        window.onload = loadDashboard;
+    </script>
+</body>
+</html>
